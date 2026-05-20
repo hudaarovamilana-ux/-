@@ -1,0 +1,4 @@
+aiogram>=3.17,<4
+aiohttp>=3.11,<4
+flask>=3.0,<4
+apscheduler>=3.10,<4
