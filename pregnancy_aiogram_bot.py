@@ -6,7 +6,8 @@ from aiogram.types import (
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    CallbackQuery
+    CallbackQuery,
+    BotCommand,
 )
 from aiogram import BaseMiddleware
 from aiogram.filters import BaseFilter
@@ -104,13 +105,48 @@ QUESTION_INTRO_TEXT = (
     "✍️ Напишите ваш вопрос в этом чате."
 )
 
+BOT_PROFILE_DESCRIPTION = (
+    "Это виртуальная женская консультация, здесь вы можете узнать всё про свою "
+    "беременность, какие анализы сдавать, задать любой интересующий вас вопрос гинекологу🤍\n\n"
+    "Узнать про свою неделю /start\n"
+    "Узнать обо всех функциях /menu"
+)
+
+BOT_MENU_TEXT = (
+    "📌 **Меню бота «Женская консультация»**\n\n"
+    "📅 **Недели** — информация по каждой неделе беременности (1–41)\n"
+    "📋 **Анализы** — какие анализы сдавать по триместрам\n"
+    "👶 **Подсчёт шевелений** — счётчик движений малыша\n"
+    "👤 **Профиль** — ваш срок, ПДР, рост и вес\n"
+    "🔔 **Уведомления** — напоминания о новой неделе\n"
+    "💬 **Задать свой вопрос** — ответ ИИ и вопрос гинекологу\n"
+    "🏠 **Старт** — указать срок заново или вернуться в меню\n\n"
+    "Команды:\n"
+    "/start — узнать про свою неделю\n"
+    "/menu — все функции бота"
+)
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 
 @dp.startup()
-async def _start_week_scheduler(bot: Bot, **_kwargs: Any) -> None:
+async def _on_startup(bot: Bot, **_kwargs: Any) -> None:
     asyncio.create_task(check_week_updates(bot))
+    try:
+        await bot.set_my_description(description=BOT_PROFILE_DESCRIPTION)
+        await bot.set_my_short_description(
+            short_description="Виртуальная женская консультация для беременных 🌸",
+        )
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="Узнать про свою неделю"),
+                BotCommand(command="menu", description="Все функции бота"),
+            ]
+        )
+        logger.info("Профиль бота в Telegram обновлён (описание и команды)")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Не удалось обновить профиль бота в Telegram: %s", exc)
 
 
 class MessageLoggingMiddleware(BaseMiddleware):
@@ -321,6 +357,17 @@ async def handle_start(message: types.Message, state: FSMContext) -> None:
 @dp.message(CommandStart())
 async def start(message: types.Message, state: FSMContext):
     await handle_start(message, state)
+
+
+@dp.message(Command("menu"))
+async def show_bot_menu(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer(BOT_MENU_TEXT, parse_mode="Markdown")
+    if user_has_complete_onboarding(get_user(message.from_user.id)):
+        await message.answer(
+            "Выбери раздел в меню ниже:",
+            reply_markup=get_main_menu_keyboard(),
+        )
 
 
 @dp.callback_query(
