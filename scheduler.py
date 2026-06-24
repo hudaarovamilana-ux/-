@@ -3,7 +3,7 @@ import asyncio
 from aiogram import Bot
 
 from database import get_users_for_notification, update_last_notification
-from weeks_data import WEEKS_INFO
+from weeks_data import WEEKS_INFO, build_week_message, build_week_message
 
 
 async def check_week_updates(bot: Bot) -> None:
@@ -20,13 +20,7 @@ async def check_week_updates(bot: Bot) -> None:
                         "👇 Смотри что нового:",
                     )
                     week_data = WEEKS_INFO.get(current_week, {})
-                    text = f"🌸 **{current_week} неделя беременности**\n\n"
-                    if week_data.get("fruit"):
-                        text += f"🍎 Размер плода: {week_data['fruit']}\n\n"
-                    if week_data.get("description"):
-                        text += f"{week_data['description']}\n\n"
-                    if week_data.get("mom_feeling"):
-                        text += f"🤰 **Ощущения мамы:**\n{week_data['mom_feeling']}\n\n"
+                    text = build_week_message(current_week, week_data)
 
                     await bot.send_message(user_id, text, parse_mode="Markdown")
                     if week_data.get("fact"):

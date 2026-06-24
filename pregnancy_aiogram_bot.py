@@ -22,7 +22,7 @@ import os
 import re
 
 # Импортируем данные по неделям
-from weeks_data import WEEKS_INFO
+from weeks_data import WEEKS_INFO, build_week_message, build_week_message
 
 # Импортируем функции из database
 from database import (
@@ -1034,26 +1034,8 @@ async def show_week_info_from_menu(callback: types.CallbackQuery):
     """Показывает информацию о выбранной неделе"""
     week = int(callback.data.split("_")[1])
     week_data = get_week_info(week)
-    
-    # Формируем текст
-    text = f"🌸 **{week} неделя беременности**\n\n"
-    
-    if week_data.get('fruit'):
-        text += f"🍎 Размер плода: {week_data['fruit']}\n\n"
-    
-    if week_data.get('description'):
-        text += f"{week_data['description']}\n\n"
-    
-    if week_data.get('mom_feeling'):
-        text += f"🤰 **Ощущения мамы:**\n{week_data['mom_feeling']}\n\n"
-    
-    if week_data.get('nutrition'):
-        text += f"🥗 **Питание:**\n{week_data['nutrition']}\n\n"
-    
-    if week_data.get('doctors'):
-        text += f"👩‍⚕️ **Врачи и анализы:**\n{week_data['doctors']}\n\n"
-    
-    # Отправляем основную информацию
+    text = build_week_message(week, week_data)
+
     await callback.message.answer(text, parse_mode="Markdown")
     
     # Если есть интересный факт
@@ -1326,27 +1308,9 @@ def get_analyses_menu_keyboard():
     return keyboard
 
 async def show_week_info(message: types.Message, week: int):
-    # Получаем информацию о неделе
     week_data = get_week_info(week)
-    
-    # Формируем полное сообщение
-    response = f"🌸 **{week} неделя беременности**\n\n"
-    
-    if week_data.get('fruit'):
-        response += f"🍎 Размер плода: {week_data['fruit']}\n\n"
-    
-    if week_data.get('description'):
-        response += f"{week_data['description']}\n\n"
-    
-    if week_data.get('mom_feeling'):
-        response += f"🤰 **Ощущения мамы:**\n{week_data['mom_feeling']}\n\n"
-    
-    if week_data.get('nutrition'):
-        response += f"🥗 **Питание:**\n{week_data['nutrition']}\n\n"
-    
-    if week_data.get('doctors'):
-        response += f"👩‍⚕️ **Врачи и анализы:**\n{week_data['doctors']}\n\n"
-    
+    response = build_week_message(week, week_data)
+
     await message.answer(response, parse_mode="Markdown")
     
     # Если есть интересный факт - показываем его отдельно
