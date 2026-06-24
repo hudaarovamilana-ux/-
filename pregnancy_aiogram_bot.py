@@ -108,23 +108,28 @@ QUESTION_INTRO_TEXT = (
 BOT_PROFILE_DESCRIPTION = (
     "Это виртуальная женская консультация, здесь вы можете узнать всё про свою "
     "беременность, какие анализы сдавать, задать любой интересующий вас вопрос гинекологу🤍\n\n"
-    "start — начать пользоваться ботом\n"
+    "/start — начать пользоваться ботом\n"
     "Узнать обо всех функциях /menu"
 )
 
 BOT_MENU_TEXT = (
     "📌 **Меню бота «Женская консультация»**\n\n"
-    "📅 **Недели** — информация по каждой неделе беременности (1–41)\n"
-    "📋 **Анализы** — какие анализы сдавать по триместрам\n"
-    "👶 **Подсчёт шевелений** — счётчик движений малыша\n"
-    "👤 **Профиль** — ваш срок, ПДР, рост и вес\n"
-    "🔔 **Уведомления** — напоминания о новой неделе\n"
-    "💬 **Задать свой вопрос** — ответ ИИ и вопрос гинекологу\n"
-    "🏠 **Старт** — указать срок заново или вернуться в меню\n\n"
-    "Команды:\n"
-    "/start — начать пользоваться ботом\n"
-    "/menu — все функции бота"
+    "Выберите раздел:"
 )
+
+
+def get_menu_inline_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📅 Недели", callback_data="menu_weeks")],
+            [InlineKeyboardButton(text="📋 Анализы", callback_data="menu_analyses")],
+            [InlineKeyboardButton(text="👶 Подсчёт шевелений", callback_data="menu_kicks")],
+            [InlineKeyboardButton(text="👤 Профиль", callback_data="menu_profile")],
+            [InlineKeyboardButton(text="🔔 Уведомления", callback_data="menu_notifications")],
+            [InlineKeyboardButton(text="💬 Задать свой вопрос", callback_data="menu_question")],
+            [InlineKeyboardButton(text="🏠 Старт", callback_data="menu_start")],
+        ]
+    )
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -362,10 +367,14 @@ async def start(message: types.Message, state: FSMContext):
 @dp.message(Command("menu"))
 async def show_bot_menu(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer(BOT_MENU_TEXT, parse_mode="Markdown")
+    await message.answer(
+        BOT_MENU_TEXT,
+        parse_mode="Markdown",
+        reply_markup=get_menu_inline_keyboard(),
+    )
     if user_has_complete_onboarding(get_user(message.from_user.id)):
         await message.answer(
-            "Выбери раздел в меню ниже:",
+            "Или выбери раздел на клавиатуре ниже:",
             reply_markup=get_main_menu_keyboard(),
         )
 
@@ -854,6 +863,34 @@ async def handle_analyses_button(message: types.Message):
 @dp.message(lambda message: message.text == "🏠 Старт")
 async def handle_start_button(message: types.Message, state: FSMContext):
     await handle_start(message, state)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("menu_"))
+async def menu_inline_action(callback: types.CallbackQuery, state: FSMContext):
+    """Кликабельные разделы в /menu."""
+    msg = callback.message
+    action = callback.data.removeprefix("menu_")
+
+    if action == "weeks":
+        await show_weeks_menu(msg)
+    elif action == "analyses":
+        await handle_analyses_button(msg)
+    elif action == "kicks":
+        await kick_counter_menu(msg)
+    elif action == "profile":
+        await state.clear()
+        await send_profile_message(msg)
+    elif action == "notifications":
+        await notifications_settings(msg)
+    elif action == "question":
+        await handle_ask_question_button(msg, state)
+    elif action == "start":
+        await handle_start(msg, state)
+    else:
+        await callback.answer("Неизвестный раздел")
+        return
+
+    await callback.answer()
 
 
 def _format_profile_value(value: Any) -> str:
