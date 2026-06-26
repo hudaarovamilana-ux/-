@@ -101,6 +101,17 @@ def get_connection():
             expert_replied_at TEXT
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS trimester_checklist (
+            user_id INTEGER NOT NULL,
+            trimester INTEGER NOT NULL,
+            item_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'none',
+            updated_at TEXT,
+            PRIMARY KEY (user_id, trimester, item_key)
+        )
+    ''')
     
     conn.commit()
     return conn
@@ -183,6 +194,17 @@ def init_db():
             expert_reply TEXT,
             created_at TEXT,
             expert_replied_at TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS trimester_checklist (
+            user_id INTEGER NOT NULL,
+            trimester INTEGER NOT NULL,
+            item_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'none',
+            updated_at TEXT,
+            PRIMARY KEY (user_id, trimester, item_key)
         )
     ''')
     
@@ -785,3 +807,50 @@ def user_is_awaiting_question(user_id: int) -> bool:
         return False
     row = _normalize_user_row(row)
     return bool(row[U_AWAITING_Q])
+
+
+def get_trimester_checklist_statuses(user_id: int, trimester: int) -> dict[str, str]:
+    """Статусы пунктов чеклиста: none / planned / done."""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT item_key, status
+            FROM trimester_checklist
+            WHERE user_id = ? AND trimester = ?
+            """,
+            (user_id, trimester),
+        )
+        return {row[0]: row[1] for row in cursor.fetchall()}
+    finally:
+        if conn:
+            conn.close()
+
+
+def set_trimester_checklist_status(
+    user_id: int,
+    trimester: int,
+    item_key: str,
+    status: str,
+) -> None:
+    ensure_user_exists(user_id)
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute(
+            """
+            INSERT INTO trimester_checklist (user_id, trimester, item_key, status, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, trimester, item_key)
+            DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at
+            """,
+            (user_id, trimester, item_key, status, now),
+        )
+        conn.commit()
+    finally:
+        if conn:
+            conn.close()

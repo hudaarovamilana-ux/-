@@ -23,7 +23,7 @@ import os
 import re
 
 # Импортируем данные по неделям
-from weeks_data import WEEKS_INFO, build_week_message, build_week_message
+from weeks_data import WEEKS_INFO, build_week_message
 
 # Импортируем функции из database
 from database import (
@@ -57,6 +57,8 @@ from database import (
     update_profile_field,
     user_has_complete_onboarding,
     user_is_awaiting_question,
+    get_trimester_checklist_statuses,
+    set_trimester_checklist_status,
 )
 from pregnancy_math import (
     approximate_due_from_total_days,
@@ -70,6 +72,14 @@ from pregnancy_math import (
 )
 from scheduler import check_week_updates
 from ai_assistant import generate_pregnancy_answer, is_ai_configured
+from trimester_checklist import (
+    FIRST_TRIMESTER_DISCLAIMER,
+    FIRST_TRIMESTER_ITEM_BY_ID,
+    STATUS_LABEL_RU,
+    build_first_trimester_keyboard,
+    build_first_trimester_status_keyboard,
+    build_first_trimester_text,
+)
 
 TOKEN = os.getenv("BOT_TOKEN", "").strip()
 if not TOKEN:
@@ -1160,8 +1170,11 @@ async def show_analyses_by_trimester(callback: types.CallbackQuery):
     trimester = int(callback.data.split("_")[1])
 
     if trimester == 1:
-        text = FIRST_TRIMESTER_ANALYSES
-    elif trimester == 2:
+        await send_first_trimester_checklist(callback.message, callback.from_user.id)
+        await callback.answer()
+        return
+
+    if trimester == 2:
         text = SECOND_TRIMESTER_ANALYSES
     else:
         text = THIRD_TRIMESTER_ANALYSES
@@ -1458,34 +1471,6 @@ def calculate_current_week(registered_date, initial_week):
     
     return min(current_week, 42)  # Не больше 42 недель
 
-# Информация об анализах первого триместра
-FIRST_TRIMESTER_ANALYSES = """
-📋 Анализы первого триместра
-
-1️⃣ Тест на беременность (домашний)
-   • Первый признак - задержка менструации
-   • Можно делать с первого дня задержки
-
-2️⃣ Первый анализ ХГЧ (кровь из вены)
-   • Подтверждает беременность
-   • Показывает примерный срок
-
-3️⃣ Повторный ХГЧ через 48 часов
-   • При нормальной беременности уровень ХГЧ удваивается каждые 48-72 часа
-   • Помогает исключить замершую беременность
-
-4️⃣ УЗИ на 5–6 неделе
-   • Подтверждает маточную беременность
-   • Можно увидеть плодное яйцо и сердцебиение
-   • Исключает внематочную беременность
-
-5️⃣ Первый скрининг (12 недель)
-   • УЗИ + анализ крови
-   • Проверка на хромосомные abnormalities
-   • Оценка развития малыша 
-
-🌸 Важно: все назначения должен делать твой врач! Эта информация - для ознакомления.
-"""
 # Информация об анализах второго триместра
 SECOND_TRIMESTER_ANALYSES = """
 📋 АНАЛИЗЫ ВТОРОГО ТРИМЕСТРА (13–27 недель)
@@ -1692,14 +1677,70 @@ THIRD_TRIMESTER_ANALYSES = """
 🌸 Береги себя и малыша! Скоро встреча! ❤️
 """
 
+async def send_first_trimester_checklist(message: Message, user_id: int) -> None:
+    statuses = get_trimester_checklist_statuses(user_id, 1)
+    text = build_first_trimester_text(statuses)
+    keyboard = build_first_trimester_keyboard(statuses)
+    await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+    await message.answer(FIRST_TRIMESTER_DISCLAIMER)
+
+
 @dp.callback_query(lambda c: c.data == "first_trimester_analyses")
 async def show_first_trimester_analyses(callback_query: types.CallbackQuery):
-    """Показывает информацию об анализах первого триместра"""
-    await callback_query.message.answer(
-        FIRST_TRIMESTER_ANALYSES,
-        parse_mode="Markdown"
+    """Показывает интерактивный чеклист анализов первого триместра."""
+    await send_first_trimester_checklist(
+        callback_query.message,
+        callback_query.from_user.id,
     )
-    await callback_query.answer()  # Закрываем уведомление о нажатии
+    await callback_query.answer()
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("cl1p:"))
+async def first_trimester_checklist_pick(callback: CallbackQuery):
+    item_id = callback.data.split(":", 1)[1]
+    item = FIRST_TRIMESTER_ITEM_BY_ID.get(item_id)
+    if not item:
+        await callback.answer("Пункт не найден", show_alert=True)
+        return
+
+    await callback.message.edit_reply_markup(
+        reply_markup=build_first_trimester_status_keyboard(item_id),
+    )
+    await callback.answer(f"«{item['button']}» — выбери статус")
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("cl1s:"))
+async def first_trimester_checklist_set(callback: CallbackQuery):
+    parts = callback.data.split(":", 2)
+    if len(parts) != 3:
+        await callback.answer()
+        return
+
+    _, item_id, status = parts
+    item = FIRST_TRIMESTER_ITEM_BY_ID.get(item_id)
+    if not item or status not in STATUS_LABEL_RU:
+        await callback.answer("Некорректный статус", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+    set_trimester_checklist_status(user_id, 1, item_id, status)
+    statuses = get_trimester_checklist_statuses(user_id, 1)
+    text = build_first_trimester_text(statuses)
+    keyboard = build_first_trimester_keyboard(statuses)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+    await callback.answer(f"«{item['button']}»: {STATUS_LABEL_RU[status]}")
+
+
+@dp.callback_query(lambda c: c.data == "cl1back")
+async def first_trimester_checklist_back(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    statuses = get_trimester_checklist_statuses(user_id, 1)
+    text = build_first_trimester_text(statuses)
+    keyboard = build_first_trimester_keyboard(statuses)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+    await callback.answer()
+
+
 @dp.callback_query(lambda c: c.data == "second_trimester_analyses")
 async def show_second_trimester_analyses(callback_query: types.CallbackQuery):
     """Показывает информацию об анализах второго триместра"""
